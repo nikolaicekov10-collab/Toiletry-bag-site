@@ -1,0 +1,126 @@
+[
+  {
+    "id": "custom-13",
+    "name": "Мъжки несесер за пътуване",
+    "nameEn": "Men’s travel toiletry bag",
+    "images": [
+      "/images/custom-gallery/13-01.webp",
+      "/images/custom-gallery/13-02.webp"
+    ]
+  },
+  {
+    "id": "custom-1",
+    "name": "Мини чантичка за китка",
+    "nameEn": "Mini wrist bag",
+    "images": [
+      "/images/custom-gallery/01-01.webp"
+    ]
+  },
+  {
+    "id": "custom-2",
+    "name": "Дамски несесер за козметика",
+    "nameEn": "Women’s cosmetics bag",
+    "images": [
+      "/images/custom-gallery/02-01.webp"
+    ]
+  },
+  {
+    "id": "custom-3",
+    "name": "Дамска чанта през рамо",
+    "nameEn": "Women’s shoulder bag",
+    "images": [
+      "/images/custom-gallery/03-01.webp",
+      "/images/custom-gallery/03-02.webp"
+    ]
+  },
+  {
+    "id": "custom-4",
+    "name": "Раница",
+    "nameEn": "Backpack",
+    "images": [
+      "/images/custom-gallery/04-01.webp",
+      "/images/custom-gallery/04-02.webp",
+      "/images/custom-gallery/04-03.webp",
+      "/images/custom-gallery/04-04.webp"
+    ]
+  },
+  {
+    "id": "custom-5",
+    "name": "Скрънчита за моминско парти",
+    "nameEn": "Hen party scrunchies",
+    "images": [
+      "/images/custom-gallery/05-01.webp"
+    ]
+  },
+  {
+    "id": "custom-6",
+    "name": "Портмоне",
+    "nameEn": "Purse",
+    "images": [
+      "/images/custom-gallery/06-01.webp",
+      "/images/custom-gallery/06-02.webp"
+    ]
+  },
+  {
+    "id": "custom-7",
+    "name": "XL скрънчита",
+    "nameEn": "XL scrunchies",
+    "images": [
+      "/images/custom-gallery/07-01.webp"
+    ]
+  },
+  {
+    "id": "custom-8",
+    "name": "Чанта за китка",
+    "nameEn": "Wrist bag",
+    "images": [
+      "/images/custom-gallery/08-01.webp",
+      "/images/custom-gallery/08-02.webp",
+      "/images/custom-gallery/08-03.webp"
+    ]
+  },
+  {
+    "id": "custom-9",
+    "name": "Мини чанта за рамо и китка",
+    "nameEn": "Mini shoulder and wrist bag",
+    "images": [
+      "/images/custom-gallery/09-01.webp",
+      "/images/custom-gallery/09-02.webp"
+    ]
+  },
+  {
+    "id": "custom-10",
+    "name": "Мъжки несесер",
+    "nameEn": "Men’s toiletry bag",
+    "images": [
+      "/images/custom-gallery/10-01.webp"
+    ]
+  },
+  {
+    "id": "custom-11",
+    "name": "Голяма плажна чанта с махащо се дъно",
+    "nameEn": "Large beach bag with a removable base",
+    "images": [
+      "/images/custom-gallery/beach-bag-cover-v2.webp",
+      "/images/custom-gallery/11-03.webp",
+      "/images/custom-gallery/11-02.webp",
+      "/images/custom-gallery/11-04.webp",
+      "/images/custom-gallery/11-05.webp",
+      "/images/custom-gallery/11-06.webp",
+      "/images/custom-gallery/11-07.webp",
+      "/images/custom-gallery/11-08.webp"
+    ]
+  },
+  {
+    "id": "custom-12",
+    "name": "Раница с индивидуална бродерия",
+    "nameEn": "Backpack with custom embroidery",
+    "images": [
+      "/images/custom-gallery/12-01.webp",
+      "/images/custom-gallery/12-02.webp",
+      "/images/custom-gallery/12-03.webp",
+      "/images/custom-gallery/12-04.webp",
+      "/images/custom-gallery/12-05.webp"
+    ]
+  }
+]
