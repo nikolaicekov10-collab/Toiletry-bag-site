@@ -1,4 +1,4 @@
-export const LEGAL_VERSION = "2026-10-19";
+export const LEGAL_VERSION = "2026-11-01";
 // The owner has requested display of this trading name without an address.
 // These are user-supplied details, not verified legal-entity identification.
 export const merchant = {

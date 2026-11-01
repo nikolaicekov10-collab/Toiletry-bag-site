@@ -1,5 +1,6 @@
 import { env } from "cloudflare:workers";
 import courierLocationsData from "../../data/courier-locations.json";
+import { quoteOrder } from "../../order-quote";
 import { LEGAL_VERSION } from "../../legal-config";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,19 @@ export async function POST(request: Request) {
       return Response.json({ ok: false, error: "terms_required" }, { status: 400 });
     }
     const isOrder = kind === "order" || kind === "quick-order";
+    const quote = isOrder && body.items !== undefined ? quoteOrder(body.items) : null;
+    if ((kind === "order" || (kind === "quick-order" && body.items !== undefined)) && !quote) {
+      return Response.json({ ok: false, error: "invalid_items" }, { status: 400 });
+    }
+    const amount = (value: number | null) => value === null ? "По запитване" : `€${value.toFixed(2)}`;
+    const financialRecord = quote ? [
+      `Междинна сума: ${amount(quote.subtotal)}`,
+      `Отстъпка: −${amount(quote.discount)}`,
+      `Продуктова сума: ${amount(quote.productsTotal)}`,
+      `Фиксирана доставка: ${amount(quote.delivery)}`,
+      `Общо за плащане: ${amount(quote.grandTotal)}`,
+      ...quote.cart.map((item) => `Продукт #${item.id}: ${amount(item.price)} × ${item.quantity}; отстъпка ${amount(item.discount)}`),
+    ].join("\n") : "";
     const firstName = clean(body.firstName, 60);
     const name = isOrder ? firstName : clean(body.name, 120);
     const email = clean(body.email, 180);
@@ -66,7 +80,7 @@ export async function POST(request: Request) {
 
     const now = new Date();
     const legalRecord = `Правна информация: ${LEGAL_VERSION}; език: ${body.language === "en" ? "en" : "bg"}; дата: ${now.toISOString()}; Общи условия: ${kind === "order" ? "изрично приети" : "не се изисква приемане за запитване/обратно обаждане"}. Не е съгласие за маркетинг.`;
-    const storedMessage = `${customerMessage}\n\n${legalRecord}`;
+    const storedMessage = `${customerMessage}${financialRecord ? `\n\n${financialRecord}` : ""}\n\n${legalRecord}`;
     const day = now.toISOString().slice(0, 10);
     await env.DB.batch([
       env.DB.prepare(
@@ -95,6 +109,10 @@ export async function POST(request: Request) {
     form.set("Телефон", phone || "Не е посочен");
     form.set("Продукт", product || "Общо запитване");
     form.set("Правна информация", legalRecord);
+    if (quote) {
+      form.set("Цени и доставка", financialRecord);
+      form.set("Общо за плащане", amount(quote.grandTotal));
+    }
     form.set(
       kind === "order" ? "Допълнителна информация" : "Съобщение",
       kind === "quick-order" ? quickOrderMessage : message || "Не е посочена",
@@ -110,7 +128,7 @@ export async function POST(request: Request) {
     });
     if (!delivery.ok) throw new Error(`Email delivery failed: ${delivery.status}`);
 
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, totals: quote ? { subtotal: quote.subtotal, discount: quote.discount, productsTotal: quote.productsTotal, delivery: quote.delivery, grandTotal: quote.grandTotal } : undefined });
   } catch (error) {
     console.error("contact", error);
     return Response.json({ ok: false, error: "unavailable" }, { status: 503 });

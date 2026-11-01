@@ -52,7 +52,7 @@ test("terms acceptance is recorded, while enquiries require no blanket GDPR cons
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => Response.json({ success: true });
   try {
-    assert.equal((await post("/api/contact", { kind: "order", firstName: "Test", email: "test@example.com", phone: "0890000000", termsAccepted: "on", language: "en" })).status, 200);
+    assert.equal((await post("/api/contact", { kind: "order", firstName: "Test", email: "test@example.com", phone: "0890000000", termsAccepted: "on", language: "en", items: [{ id: 1, quantity: 1 }] })).status, 200);
     assert.ok(writes.some(({ sql, values }) => sql.includes("INSERT INTO messages") && values.some((value) => typeof value === "string" && value.includes("изрично приети"))));
     assert.equal((await post("/api/contact", { kind: "enquiry", name: "Test", email: "test@example.com", message: "Question" })).status, 200);
     assert.equal((await post("/api/contact", { kind: "quick-order", firstName: "Test", phone: "0890000000" })).status, 200);
@@ -71,4 +71,33 @@ test("all legal pages render and unknown policies return 404", async () => {
     assert.match(html, /legal-toc/);
   }
   assert.equal((await worker.fetch(new Request("https://example.com/policies/unknown"), bindings, context)).status, 404);
+});
+
+test("order totals are recalculated on the server and included in storage and email", async () => {
+  writes.length = 0;
+  const originalFetch = globalThis.fetch;
+  let email;
+  globalThis.fetch = async (url, options) => { email = options.body; return Response.json({ success: true }); };
+  try {
+    const response = await post("/api/contact", {
+      kind: "order", firstName: "Test", email: "test@example.com", phone: "0890000000", termsAccepted: "on",
+      items: [{ id: 1, quantity: 2, price: 0, discount: 999 }], delivery: 0, grandTotal: 0,
+    });
+    assert.equal(response.status, 200);
+    const { totals } = await response.json();
+    assert.deepEqual(totals, { subtotal: 70, discount: 5.25, productsTotal: 64.75, delivery: 3.50, grandTotal: 68.25 });
+    assert.equal(email.get("Общо за плащане"), "€68.25");
+    assert.match(email.get("Цени и доставка"), /Фиксирана доставка: €3\.50/);
+    assert.ok(writes.some(({ sql, values }) => sql.includes("INSERT INTO messages") && values.some((value) => typeof value === "string" && value.includes("Общо за плащане: €68.25"))));
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("invalid or missing order items are rejected before storing or emailing an order", async () => {
+  writes.length = 0;
+  for (const items of [undefined, [], [{ id: 999, quantity: 1 }], [{ id: 1, quantity: 0 }], [{ id: 1, quantity: 1.5 }], [{ id: 1, quantity: 100 }]]) {
+    const response = await post("/api/contact", { kind: "order", firstName: "Test", email: "test@example.com", phone: "0890000000", termsAccepted: "on", items });
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, "invalid_items");
+  }
+  assert.equal(writes.length, 0);
 });

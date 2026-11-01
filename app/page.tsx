@@ -7,7 +7,8 @@ import type { Courier } from "./courier-types";
 import { imageProps } from "./image-path";
 import { CART_KEY, restoreCart, serializeCart } from "./cart-storage";
 import { filterProducts } from "./product-filter";
-import { applySecondProductDiscount, isPromotionEligible } from "./cart-pricing";
+import { calculateOrderTotals, isPromotionEligible, deliveryChargeBG, deliveryChargeEN } from "./cart-pricing";
+import { productPricing } from "./product-pricing";
 import { SearchDropdown } from "./search-dropdown";
 import { CustomGallery } from "./custom-gallery";
 
@@ -66,8 +67,7 @@ const products: Product[] = [
     name: "Несесер Nikky’S",
     category: "Несесери",
     group: ["Дамски аксесоари", "Мъжки аксесоари"],
-    ecoLeather: true,
-    price: 35,
+    ...productPricing[1],
     color: "Кафяв",
     tone: "#65473d",
     colors: toiletryColors.map(({ name, tone }) => ({ name, tone })),
@@ -94,8 +94,7 @@ const products: Product[] = [
     name: "Мини чанта Nikky’S",
     category: "Чанти",
     group: "Дамски аксесоари",
-    ecoLeather: true,
-    price: 35,
+    ...productPricing[2],
     color: "Кафяв",
     tone: "#65473d",
     colors: [
@@ -150,8 +149,7 @@ const products: Product[] = [
     name: "Чанта за китка Nikky’S",
     category: "Чанти за китка",
     group: ["Дамски аксесоари", "Мъжки аксесоари"],
-    ecoLeather: true,
-    price: 40,
+    ...productPricing[5],
     color: "Кафяв",
     tone: "#4a3025",
     colors: [
@@ -211,8 +209,7 @@ const products: Product[] = [
     name: "Мини портмоне Nikky’S",
     category: "Мини портмонета",
     group: "Дамски аксесоари",
-    ecoLeather: true,
-    price: 19,
+    ...productPricing[6],
     color: "Кафяв",
     tone: "#3b1714",
     colors: [
@@ -267,8 +264,7 @@ const products: Product[] = [
     name: "Чанта за рамо Nikky’S",
     category: "Чанти",
     group: "Дамски аксесоари",
-    ecoLeather: true,
-    price: 50,
+    ...productPricing[7],
     color: "Черен",
     tone: "#171615",
     colors: [
@@ -328,8 +324,7 @@ const products: Product[] = [
     name: "Стандартно сатенено скрънчи Nikky’S",
     category: "Стандартни скрънчита",
     group: "Скрънчита",
-    price: 3,
-    discountEligible: false,
+    ...productPricing[8],
     color: "Бордо",
     tone: "#7f1735",
     colors: [
@@ -364,8 +359,7 @@ const products: Product[] = [
     name: "XL сатенено скрънчи Nikky’S",
     category: "XL скрънчита",
     group: "Скрънчита",
-    price: 6,
-    discountEligible: false,
+    ...productPricing[9],
     color: "Бордо",
     tone: "#7f1735",
     colors: [
@@ -538,20 +532,12 @@ export default function Home() {
   const { cities: availableCities, locations: courierLocations, status: courierLoadStatus } = useCourierLocations(
     contactFormOpen && contactKind === "order" && deliveryMethod === "courier", courier, courierCity, courierLoadAttempt,
   );
-  const cart = useMemo(() => applySecondProductDiscount(cartItems), [cartItems]);
+  const totals = useMemo(() => calculateOrderTotals(cartItems), [cartItems]);
+  const { cart, subtotal: total, discount: discountTotal, productsTotal, delivery: deliveryFee, grandTotal: finalTotal } = totals;
   const [color, setColor] = useState("Кафяв");
   const [activeImage, setActiveImage] = useState<string | null>(null);
   const [activeGroup, setActiveGroup] = useState<Group | "Всички">("Всички");
   const [activeSubcategory, setActiveSubcategory] = useState<string | null>(null);
-  const total = useMemo(
-    () => cart.reduce((sum, item) => sum + (item.price ?? 0) * item.quantity, 0),
-    [cart],
-  );
-  const discountTotal = useMemo(
-    () => cart.reduce((sum, item) => sum + (item.discount ?? 0), 0),
-    [cart],
-  );
-  const finalTotal = Math.max(0, total - discountTotal);
   const visibleProducts = filterProducts(products, activeGroup, activeSubcategory);
   const selectedAudience: Audience = activeGroup === "Мъжки аксесоари" ? "men" : "women";
   const selectedVariants =
@@ -726,10 +712,11 @@ export default function Home() {
     const submittedForm = event.currentTarget;
     const form = new FormData(submittedForm);
     const payload = Object.fromEntries(form.entries());
+    const items = contactKind === "enquiry" ? undefined : cart.map(({ id, quantity }) => ({ id, quantity }));
     const response = await fetch("/api/contact", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, language, kind: contactKind, product: contactProduct, deliveryMethod, courier, courierCity, courierLocation }),
+      body: JSON.stringify({ ...payload, language, kind: contactKind, product: contactProduct, items, deliveryMethod, courier, courierCity, courierLocation }),
     }).catch(() => null);
     setContactStatus(response?.ok ? "sent" : "error");
     if (response?.ok) submittedForm.reset();
@@ -1144,14 +1131,16 @@ export default function Home() {
                 </div>
                 {cartStorageError && <p role="status">{text("Браузърът не позволява запазване на количката. Тя ще се пази само докато тази страница е отворена.", "Your browser prevents saving the bag. It will remain available only while this page is open.")}</p>}
                 <div className="cart-summary" aria-live="polite">
-                  <div><span>{text("Междинна сума", "Subtotal")}</span><strong>{cart.some((item) => item.price === null) ? text("Цена предстои", "Price coming soon") : `€${total.toFixed(2)}`}</strong></div>
+                  <div><span>{text("Междинна сума", "Subtotal")}</span><strong>{cart.some((item) => item.price === null) ? text("Цена предстои", "Price coming soon") : `€${total!.toFixed(2)}`}</strong></div>
                   {discountTotal > 0 && <div className="cart-discount"><span>{text("Отстъпка −15% за втория продукт", "15% off the second product")}</span><strong>−€{discountTotal.toFixed(2)}</strong></div>}
-                  <div className="cart-final"><span>{text("Сума за продуктите", "Product total")}</span><strong>{cart.some((item) => item.price === null) ? text("Цена предстои", "Price coming soon") : `€${finalTotal.toFixed(2)}`}</strong></div>
+                  <div><span>{text("Сума за продуктите", "Product total")}</span><strong>{productsTotal === null ? text("По запитване", "On request") : `€${productsTotal.toFixed(2)}`}</strong></div>
+                  <div><span>{text("Фиксирана доставка", "Fixed delivery")}</span><strong>€{deliveryFee.toFixed(2)}</strong></div>
+                  <div className="cart-final"><span>{text("Общо за плащане", "Total including delivery")}</span><strong>{finalTotal === null ? text("По запитване", "On request") : `€${finalTotal.toFixed(2)}`}</strong></div>
                 </div>
-                <button className="primary-button full" type="button" onClick={() => { const itemsSummary = cart.map(item => `${productText(item, "name")} — ${translate(item.color)} × ${item.quantity}`).join("; "); const discountSummary = cart.every(item => item.price !== null) ? `; ${text("Отстъпка −15% за втория продукт", "15% off the second product")}: −€${discountTotal.toFixed(2)}; ${text("Сума за продуктите", "Product total")}: €${finalTotal.toFixed(2)}` : ""; setCartOpen(false); openContactForm("order", `${itemsSummary}${discountSummary}`); }}>
+                <button className="primary-button full" type="button" onClick={() => { const itemsSummary = cart.map(item => `${productText(item, "name")} — ${translate(item.color)} × ${item.quantity}`).join("; "); setCartOpen(false); openContactForm("order", itemsSummary); }}>
                   {text("Завърши поръчката", "Complete order")} <ArrowRight size={17} />
                 </button>
-                <small>{text("Доставката не е включена. Крайната сума с доставката се потвърждава отделно преди приемане на поръчката.", "Delivery is not included. The final total including delivery is confirmed separately before accepting the order.")}</small>
+                <small>{text(deliveryChargeBG, deliveryChargeEN)}</small>
               </>
             )}
           </aside>
@@ -1221,14 +1210,16 @@ export default function Home() {
                 </div>}
             </fieldset>}
             {contactKind !== "quick-order" && <label>{contactKind === "order" ? text("Допълнителна информация", "Additional information") : text("Съобщение", "Message")}<textarea name="message" required={contactKind === "enquiry"} rows={5} /></label>}
-            {contactKind === "order" && <section className="checkout-review" aria-labelledby="checkout-review-title">
-              <h3 id="checkout-review-title" className="checkout-step">{text("3. Преглед на заявката", "3. Review your request")}</h3>
+            {(contactKind === "order" || contactKind === "quick-order") && cart.length > 0 && <section className="checkout-review" aria-labelledby="checkout-review-title">
+              <h3 id="checkout-review-title" className="checkout-step">{contactKind === "order" ? text("3. Преглед на заявката", "3. Review your request") : text("Преглед на заявката", "Review your request")}</h3>
               <ul>{cart.map((item, index) => <li key={`${item.id}-${index}`}><span>{productText(item, "name")} · {translate(item.color)} × {item.quantity}</span><strong>{item.price === null ? text("По запитване", "On request") : `€${((item.price * item.quantity) - (item.discount ?? 0)).toFixed(2)}`}</strong></li>)}</ul>
-              <div><span>{text("Междинна сума", "Subtotal")}</span><strong>{cart.some((item) => item.price === null) ? text("По запитване", "On request") : `€${total.toFixed(2)}`}</strong></div>
+              <div><span>{text("Междинна сума", "Subtotal")}</span><strong>{cart.some((item) => item.price === null) ? text("По запитване", "On request") : `€${total!.toFixed(2)}`}</strong></div>
               {discountTotal > 0 && <div><span>{text("Включена отстъпка", "Included discount")}</span><strong>−€{discountTotal.toFixed(2)}</strong></div>}
-              <div className="review-total"><span>{text("Сума за продуктите", "Product total")}</span><strong>{cart.some((item) => item.price === null) ? text("По запитване", "On request") : `€${finalTotal.toFixed(2)}`}</strong></div>
-              <p>{deliveryMethod === "courier" ? `${courier ? courierNames[courier] : text("Избери куриер", "Choose a courier")} · ${courierCity} · ${courierOfficeOptions.find((option) => option.value === courierLocation)?.label ?? text("Избери офис или автомат", "Choose an office or locker")}` : text("Доставка до посочения адрес", "Delivery to the address entered above")}</p>
-              <p>{text("Доставката не е включена. Крайната сума с доставката се потвърждава отделно преди приемане на поръчката.", "Delivery is not included. The final total including delivery is confirmed separately before accepting the order.")}</p>
+              <div><span>{text("Сума за продуктите", "Product total")}</span><strong>{productsTotal === null ? text("По запитване", "On request") : `€${productsTotal.toFixed(2)}`}</strong></div>
+              <div><span>{text("Фиксирана доставка", "Fixed delivery")}</span><strong>€{deliveryFee.toFixed(2)}</strong></div>
+              <div className="review-total"><span>{text("Общо за плащане", "Total including delivery")}</span><strong>{finalTotal === null ? text("По запитване", "On request") : `€${finalTotal.toFixed(2)}`}</strong></div>
+              <p>{contactKind === "quick-order" ? text("Адресът за доставка ще уточним по телефона.", "We will agree the delivery address by phone.") : deliveryMethod === "courier" ? `${courier ? courierNames[courier] : text("Избери куриер", "Choose a courier")} · ${courierCity} · ${courierOfficeOptions.find((option) => option.value === courierLocation)?.label ?? text("Избери офис или автомат", "Choose an office or locker")}` : text("Доставка до посочения адрес", "Delivery to the address entered above")}</p>
+              <p>{text(deliveryChargeBG, deliveryChargeEN)}</p>
               <button className="review-edit" type="button" onClick={() => { setContactFormOpen(false); setCartOpen(true); }}>{text("Промени продуктите или количеството", "Edit products or quantities")}</button>
             </section>}
             <div className="form-legal">
