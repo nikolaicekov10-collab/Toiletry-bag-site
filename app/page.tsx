@@ -2,7 +2,8 @@
 
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Heart, Mail, Menu, MessageSquare, Phone, ShoppingBag, X } from "lucide-react";
-import courierLocationsData from "./data/courier-locations.json";
+import { imagePath } from "./image-path";
+import { CART_KEY, restoreCart, serializeCart } from "./cart-storage";
 import { filterProducts } from "./product-filter";
 import { applySecondProductDiscount, isPromotionEligible } from "./cart-pricing";
 import { SearchDropdown } from "./search-dropdown";
@@ -47,7 +48,6 @@ type CourierLocation = {
   code: string;
 };
 
-const courierLocations = courierLocationsData as CourierLocation[];
 const courierNames: Record<Courier, string> = { econt: "Еконт", speedy: "Спиди", boxnow: "BOX NOW" };
 
 const toiletryColors = [
@@ -542,6 +542,11 @@ export default function Home() {
   const [courierLocation, setCourierLocation] = useState("");
   const [selected, setSelected] = useState<Product | null>(null);
   const [cartItems, setCart] = useState<CartItem[]>([]);
+  const [cartRestored, setCartRestored] = useState(false);
+  const [cartStorageError, setCartStorageError] = useState(false);
+  const [courierLocations, setCourierLocations] = useState<CourierLocation[]>([]);
+  const [courierLoadStatus, setCourierLoadStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [courierLoadAttempt, setCourierLoadAttempt] = useState(0);
   const cart = useMemo(() => applySecondProductDiscount(cartItems), [cartItems]);
   const [color, setColor] = useState("Кафяв");
   const [activeImage, setActiveImage] = useState<string | null>(null);
@@ -572,7 +577,7 @@ export default function Home() {
     return [...new Set(courierLocations.filter((location) => location.carrier === courier).map((location) => location.city))]
       .sort((a, b) => a.localeCompare(b, "bg"))
       .map((city) => ({ value: city, label: city, search: city }));
-  }, [courier]);
+  }, [courier, courierLocations]);
   const courierOfficeOptions = useMemo(() => {
     if (!courier || !courierCity) return [];
     return courierLocations
@@ -582,7 +587,29 @@ export default function Home() {
         label: `${location.kind === "locker" ? (language === "bg" ? "Автомат" : "Locker") : (language === "bg" ? "Офис" : "Office")} ${location.code} · ${location.name}${location.address ? ` — ${location.address}` : ""}`,
         search: `${location.code} ${location.name} ${location.address} ${location.postCode}`,
       }));
-  }, [courier, courierCity, language]);
+  }, [courier, courierCity, language, courierLocations]);
+
+  useEffect(() => {
+    try { setCart(restoreCart(localStorage.getItem(CART_KEY), products)); }
+    catch { setCartStorageError(true); }
+    setCartRestored(true);
+  }, []);
+
+  useEffect(() => {
+    if (!cartRestored) return;
+    try { localStorage.setItem(CART_KEY, serializeCart(cartItems)); setCartStorageError(false); }
+    catch { setCartStorageError(true); }
+  }, [cartItems, cartRestored]);
+
+  useEffect(() => {
+    if (!contactFormOpen || contactKind !== "order" || courierLocations.length) return;
+    let cancelled = false;
+    setCourierLoadStatus("loading");
+    import("./data/courier-locations.json").then((data) => {
+      if (!cancelled) { setCourierLocations(data.default as CourierLocation[]); setCourierLoadStatus("ready"); }
+    }).catch(() => { if (!cancelled) setCourierLoadStatus("error"); });
+    return () => { cancelled = true; };
+  }, [contactFormOpen, contactKind, courierLocations.length, courierLoadAttempt]);
 
   useLayoutEffect(() => {
     if ("scrollRestoration" in window.history) {
@@ -597,8 +624,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const savedLanguage = window.localStorage.getItem("nikkys-language");
-    if (savedLanguage === "en") setLanguage("en");
+    try { if (localStorage.getItem("nikkys-language") === "en") setLanguage("en"); } catch {}
 
   }, []);
 
@@ -613,22 +639,23 @@ export default function Home() {
         ? "Несесери, чанти и аксесоари от капитонирана кожа, създадени на ръка с внимание към всеки детайл."
         : "Handmade toiletry bags, handbags and accessories in quilted eco leather, created with care for every detail.",
     );
-    window.localStorage.setItem("nikkys-language", language);
+    try { localStorage.setItem("nikkys-language", language); } catch {}
   }, [language]);
 
+  const modalOpen = storyOpen || cartOpen || !!selected || !!orderProduct || contactOpen || contactFormOpen || upsellOpen;
   useEffect(() => {
-    if (!storyOpen) return;
+    if (!modalOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setStoryOpen(false);
+      if (event.key === "Escape") { setStoryOpen(false); setCartOpen(false); setSelected(null); setOrderProduct(null); setContactOpen(false); setContactFormOpen(false); setUpsellOpen(false); }
     };
     window.addEventListener("keydown", closeOnEscape);
     return () => {
       document.body.style.overflow = previousOverflow;
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [storyOpen]);
+  }, [modalOpen]);
 
   useEffect(() => {
     if (!upsellOpen) return;
@@ -674,7 +701,7 @@ export default function Home() {
       // Merge only consecutive additions to preserve the order of eligible units.
       const last = items[items.length - 1];
       if (last && last.id === product.id && last.color === chosenColor && last.image === image && last.price === product.price) {
-        return [...items.slice(0, -1), { ...last, quantity: last.quantity + quantity }];
+        return [...items.slice(0, -1), { ...last, quantity: Math.min(99, last.quantity + quantity) }];
       }
       return [...items, { ...product, color: chosenColor, quantity, image }];
     });
@@ -827,7 +854,7 @@ export default function Home() {
                 }}
               >
                 {product.images ? (
-                  <img src={(product.imagesByAudience?.[activeGroup === "Мъжки аксесоари" ? "men" : "women"] ?? product.images)[0]} alt={`${productText(product, "name")} ${text("от капитонирана кожа", "in quilted eco leather")}`} />
+                  <img loading="lazy" decoding="async" src={imagePath((product.imagesByAudience?.[activeGroup === "Мъжки аксесоари" ? "men" : "women"] ?? product.images)[0])} alt={`${productText(product, "name")} ${text("от капитонирана кожа", "in quilted eco leather")}`} />
                 ) : (
                   <span
                     className="product-object"
@@ -873,7 +900,8 @@ export default function Home() {
 
       <section className="craft" id="story">
         <img
-          src="/images/nikkys-process-v2.jpg"
+          src={imagePath("/images/nikkys-process-v2.jpg")}
+          loading="lazy" decoding="async"
           alt={text("Ръчна изработка в ателието на Nikky’S", "Handcrafting in the Nikky’S studio")}
         />
         <div className="craft-copy">
@@ -974,11 +1002,17 @@ export default function Home() {
             <button className="close" onClick={() => setSelected(null)} aria-label={text("Затвори", "Close")}>
               <X />
             </button>
-            <div className="modal-visual">{selectedImages.length ? <><div className="gallery-stage"><img className="gallery-main" src={currentImage} alt={productText(selected, "name")}/>{selectedImages.length > 1 && <><button type="button" className="gallery-arrow gallery-arrow-prev" onClick={()=>showGalleryImage(-1)} aria-label={text("Предишна снимка", "Previous image")}><ArrowLeft size={20}/></button><button type="button" className="gallery-arrow gallery-arrow-next" onClick={()=>showGalleryImage(1)} aria-label={text("Следваща снимка", "Next image")}><ArrowRight size={20}/></button><span className="gallery-count" aria-live="polite">{currentImageIndex + 1} / {selectedImages.length}</span></>}</div><div className="gallery-thumbs">{selectedImages.map((image,index)=><button type="button" className={currentImage===image?"active":""} onClick={()=>setActiveImage(image)} key={image}><img src={image} alt={`${productText(selected, "name")} — ${text("снимка", "image")} ${index+1}`}/></button>)}</div></> : <span className="product-object large" style={{ "--tone": selected.tone } as React.CSSProperties}><i /></span>}</div>
+            <div className="modal-visual">{selectedImages.length ? <><div className="gallery-stage"><img className="gallery-main" src={imagePath(currentImage)} alt={productText(selected, "name")}/>{selectedImages.length > 1 && <><button type="button" className="gallery-arrow gallery-arrow-prev" onClick={()=>showGalleryImage(-1)} aria-label={text("Предишна снимка", "Previous image")}><ArrowLeft size={20}/></button><button type="button" className="gallery-arrow gallery-arrow-next" onClick={()=>showGalleryImage(1)} aria-label={text("Следваща снимка", "Next image")}><ArrowRight size={20}/></button><span className="gallery-count" aria-live="polite">{currentImageIndex + 1} / {selectedImages.length}</span></>}</div><div className="gallery-thumbs">{selectedImages.map((image,index)=><button type="button" className={currentImage===image?"active":""} onClick={()=>setActiveImage(image)} key={image}><img loading="lazy" decoding="async" src={imagePath(image)} alt={`${productText(selected, "name")} — ${text("снимка", "image")} ${index+1}`}/></button>)}</div></> : <span className="product-object large" style={{ "--tone": selected.tone } as React.CSSProperties}><i /></span>}</div>
             <div className="modal-copy">
               <p className="eyebrow">{productText(selected, "category")}</p>
               <h2>{productText(selected, "name")}</h2>
               {selected.price !== null && <strong>€{selected.price.toFixed(2)}</strong>}
+              <div className="details">
+                <span>{text("Размери", "Dimensions")}</span>
+                <b>{productText(selected, "dimensions") ?? text("Очаквайте", "Coming soon")}</b>
+                <span>{text("Материали", "Materials")}</span>
+                <b>{productText(selected, "materials") ?? text("Ще бъдат добавени", "To be added")}</b>
+              </div>
               <p>{productDescription(selected) ?? text("Практичен ръчно изработен модел от мека капитонирана кожа, с чист силует, фина подплата и метален цип.", "A practical handmade design in soft quilted eco leather, with a clean silhouette, refined lining and metal zipper.")}</p>
               {selected.colors?.length !== 0 && <fieldset>
                 <legend>
@@ -1007,12 +1041,7 @@ export default function Home() {
                   )})}
                 </div>
               </fieldset>}
-              <div className="details">
-                <span>{text("Размери", "Dimensions")}</span>
-                <b>{productText(selected, "dimensions") ?? text("Очаквайте", "Coming soon")}</b>
-                <span>{text("Материали", "Materials")}</span>
-                <b>{productText(selected, "materials") ?? text("Ще бъдат добавени", "To be added")}</b>
-              </div>
+
               <button className="primary-button full" type="button" onClick={() => { setOrderProduct(selected); setOrderColor(color); setOrderAudience(selectedAudience); setOrderImage(currentImage); setOrderQuantity(1); setOrderAdded(false); setSelected(null); }}>{text("Поръчай", "Order")} <ArrowRight size={17}/></button>
             </div>
           </section>
@@ -1021,12 +1050,12 @@ export default function Home() {
       {orderProduct && <div className="overlay" onMouseDown={() => setOrderProduct(null)}>
         <section className="order-choice" role="dialog" aria-modal="true" aria-labelledby="order-choice-title" onMouseDown={(event) => event.stopPropagation()}>
           <button className="close" type="button" aria-label={text("Затвори", "Close")} onClick={() => setOrderProduct(null)}><X /></button>
-          {orderImage && <img className="order-choice-image" src={orderImage} alt={`${productText(orderProduct, "name")} — ${translate(orderColor)}`} />}
+          {orderImage && <img className="order-choice-image" src={imagePath(orderImage)} alt={`${productText(orderProduct, "name")} — ${translate(orderColor)}`} />}
           <div className="order-choice-copy">
             <p className="eyebrow">{text("Твоят избор", "Your selection")}</p>
             <h2 id="order-choice-title">{productText(orderProduct, "name")}</h2>
             {orderProduct.colors && orderProduct.colors.length > 0 && <fieldset className="order-colors">
-              <legend>{text("Цвят", "Colour")}: <strong>{translate(orderColor)}</strong></legend>
+              <legend>{text("1. Избери цвят", "1. Choose a colour")}: <strong>{translate(orderColor)}</strong></legend>
               <div className="order-color-options">
                 {orderProduct.colors.map(({ name, tone }) => <button key={name} type="button" className={orderColor === name ? "active" : ""} aria-pressed={orderColor === name} onClick={() => {
                   const variants = orderProduct.variantsByAudience?.[orderAudience] ?? orderProduct.variants;
@@ -1039,14 +1068,14 @@ export default function Home() {
               </div>
             </fieldset>}
             <div className="order-quantity">
-              <span>{text("Количество", "Quantity")}</span>
+              <span>{text("2. Избери количество", "2. Choose a quantity")}</span>
               <div className="quantity-picker">
                 <button type="button" aria-label={text("Намали количеството", "Decrease quantity")} disabled={orderQuantity === 1} onClick={() => setOrderQuantity((value) => Math.max(1, value - 1))}>−</button>
                 <output aria-live="polite">{orderQuantity}</output>
                 <button type="button" aria-label={text("Увеличи количеството", "Increase quantity")} disabled={orderQuantity === 99} onClick={() => setOrderQuantity((value) => Math.min(99, value + 1))}>+</button>
               </div>
             </div>
-            {orderProduct.price !== null && <div className="order-choice-total"><span>€{orderProduct.price.toFixed(2)} / {text("брой", "item")}</span><strong>{text("Общо", "Total")}: €{(orderProduct.price * orderQuantity).toFixed(2)}</strong></div>}
+            {orderProduct.price !== null && <div className="order-choice-total"><span>€{orderProduct.price.toFixed(2)} / {text("брой", "item")}</span><strong>{text("Сума за продуктите", "Product total")}: €{(orderProduct.price * orderQuantity).toFixed(2)}</strong></div>}
             <button className="primary-button full" type="button" onClick={() => addToCart(orderProduct, orderColor, orderQuantity, orderImage ?? undefined)}>{text("Добави в количката", "Add to bag")} <ShoppingBag size={17} /></button>
             {orderAdded && <p className="order-added" role="status">{text("Добавено в количката. Можеш да избереш и друг цвят.", "Added to your bag. You can choose another colour.")}</p>}
             {cart.length > 0 && <button className="order-view-cart" type="button" onClick={() => { setOrderProduct(null); setCartOpen(true); }}>{text("Прегледай количката", "View bag")} ({cart.reduce((count, item) => count + item.quantity, 0)}) <ArrowRight size={17} /></button>}
@@ -1072,7 +1101,7 @@ export default function Home() {
           className="overlay cart-overlay"
           onMouseDown={() => setCartOpen(false)}
         >
-          <aside className="cart" onMouseDown={(e) => e.stopPropagation()}>
+          <aside className="cart" role="dialog" aria-modal="true" aria-label={text("Количка", "Bag")} onMouseDown={(e) => e.stopPropagation()}>
             <div className="cart-head">
               <h2>{text("Твоята количка", "Your bag")}</h2>
               <button className="close" onClick={() => setCartOpen(false)} aria-label={text("Затвори", "Close")}>
@@ -1096,11 +1125,15 @@ export default function Home() {
                 <div className="cart-items">
                   {cart.map((item, i) => (
                     <div className="cart-item" key={`${item.id}-${i}`}>
-                      {item.image ? <img className="cart-thumb" src={item.image} alt="" /> : <span className="cart-thumb" style={{ background: item.tone }} />}
+                      {item.image ? <img className="cart-thumb" src={imagePath(item.image)} alt="" /> : <span className="cart-thumb" style={{ background: item.tone }} />}
                       <div>
                         <h3>{productText(item, "name")}</h3>
                         <p>{translate(item.color)}</p>
-                        <p>{text("Количество", "Quantity")}: {item.quantity}</p>
+                        <div className="quantity-picker cart-quantity" role="group" aria-label={`${text("Количество", "Quantity")}: ${productText(item, "name")}`}>
+                          <button type="button" aria-label={text("Намали количеството", "Decrease quantity")} disabled={item.quantity <= 1} onClick={() => setCart((items) => items.map((entry, index) => index === i ? { ...entry, quantity: Math.max(1, entry.quantity - 1) } : entry))}>−</button>
+                          <output aria-live="polite">{item.quantity}</output>
+                          <button type="button" aria-label={text("Увеличи количеството", "Increase quantity")} disabled={item.quantity >= 99} onClick={() => setCart((items) => items.map((entry, index) => index === i ? { ...entry, quantity: Math.min(99, entry.quantity + 1) } : entry))}>+</button>
+                        </div>
                         <strong>{item.price === null ? text("Цена предстои", "Price coming soon") : `€${(item.price * item.quantity).toFixed(2)}`}</strong>
                         {(item.discount ?? 0) > 0 && <p className="item-discount">{text("Отстъпка за втори продукт", "Second product discount")}: −€{item.discount!.toFixed(2)}</p>}
                       </div>
@@ -1113,15 +1146,16 @@ export default function Home() {
                     </div>
                   ))}
                 </div>
-                <div className="cart-summary">
+                {cartStorageError && <p role="status">{text("Браузърът не позволява запазване на количката. Тя ще се пази само докато тази страница е отворена.", "Your browser prevents saving the bag. It will remain available only while this page is open.")}</p>}
+                <div className="cart-summary" aria-live="polite">
                   <div><span>{text("Междинна сума", "Subtotal")}</span><strong>{cart.some((item) => item.price === null) ? text("Цена предстои", "Price coming soon") : `€${total.toFixed(2)}`}</strong></div>
                   {discountTotal > 0 && <div className="cart-discount"><span>{text("Отстъпка −15% за втория продукт", "15% off the second product")}</span><strong>−€{discountTotal.toFixed(2)}</strong></div>}
-                  <div className="cart-final"><span>{text("Общо", "Total")}</span><strong>{cart.some((item) => item.price === null) ? text("Цена предстои", "Price coming soon") : `€${finalTotal.toFixed(2)}`}</strong></div>
+                  <div className="cart-final"><span>{text("Сума за продуктите", "Product total")}</span><strong>{cart.some((item) => item.price === null) ? text("Цена предстои", "Price coming soon") : `€${finalTotal.toFixed(2)}`}</strong></div>
                 </div>
-                <button className="primary-button full" type="button" onClick={() => { const itemsSummary = cart.map(item => `${productText(item, "name")} — ${translate(item.color)} × ${item.quantity}`).join("; "); const discountSummary = discountTotal > 0 && cart.every(item => item.price !== null) ? `; ${text("Отстъпка −15% за втория продукт", "15% off the second product")}: −€${discountTotal.toFixed(2)}; ${text("Крайна сума", "Final total")}: €${finalTotal.toFixed(2)}` : ""; setCartOpen(false); openContactForm("order", `${itemsSummary}${discountSummary}`); }}>
+                <button className="primary-button full" type="button" onClick={() => { const itemsSummary = cart.map(item => `${productText(item, "name")} — ${translate(item.color)} × ${item.quantity}`).join("; "); const discountSummary = cart.every(item => item.price !== null) ? `; ${text("Отстъпка −15% за втория продукт", "15% off the second product")}: −€${discountTotal.toFixed(2)}; ${text("Сума за продуктите", "Product total")}: €${finalTotal.toFixed(2)}` : ""; setCartOpen(false); openContactForm("order", `${itemsSummary}${discountSummary}`); }}>
                   {text("Завърши поръчката", "Complete order")} <ArrowRight size={17} />
                 </button>
-                <small>{text("Доставката се изчислява при завършване.", "Delivery is calculated at checkout.")}</small>
+                <small>{text("Доставката не е включена. Крайната сума с доставката се потвърждава отделно преди приемане на поръчката.", "Delivery is not included. The final total including delivery is confirmed separately before accepting the order.")}</small>
               </>
             )}
           </aside>
@@ -1140,19 +1174,20 @@ export default function Home() {
         </section>
       </div>}
       {contactFormOpen && <div className="overlay" onMouseDown={() => setContactFormOpen(false)}>
-        <section className="contact-form-card" onMouseDown={(event) => event.stopPropagation()}>
+        <section className="contact-form-card" role="dialog" aria-modal="true" aria-labelledby="contact-form-title" onMouseDown={(event) => event.stopPropagation()}>
           {contactKind === "order" && <button className="quick-order-button" type="button" onClick={() => { setContactKind("quick-order"); setContactStatus("idle"); }}>
             {text("Бърза поръчка", "Quick order")}
           </button>}
           <button className="close" type="button" aria-label={text("Затвори", "Close")} onClick={() => setContactFormOpen(false)}><X /></button>
           <p className="eyebrow">{contactKind === "quick-order" ? text("Бърза поръчка", "Quick order") : contactKind === "order" ? text("Поръчка", "Order") : text("Запитване", "Enquiry")}</p>
-          <h2>{contactKind === "quick-order" ? text("Само име и телефон", "Just your name and phone") : contactKind === "order" ? text("Завърши поръчката", "Complete your order") : text("Разкажи ми за идеята си", "Tell me about your idea")}</h2>
+          <h2 id="contact-form-title">{contactKind === "quick-order" ? text("Само име и телефон", "Just your name and phone") : contactKind === "order" ? text("Завърши поръчката", "Complete your order") : text("Разкажи ми за идеята си", "Tell me about your idea")}</h2>
           {contactProduct && <p className="contact-product">{contactProduct}</p>}
           {(contactKind === "order" || contactKind === "quick-order") && <div className="checkout-summary">
             <p><strong>{text("Начин на плащане", "Payment method")}:</strong> {text("Наложен платеж", "Cash on delivery")}</p>
             <p>{text("Срок за изработка: 3 дни след потвърждаване на поръчката. Доставка: 1–2 дни според услугата на куриера.", "Production time: 3 days after order confirmation. Delivery: 1–2 days depending on the courier service.")}</p>
           </div>}
           {contactStatus === "sent" ? <div className="form-success"><Check /><h3>{contactKind === "quick-order" ? text("Бързата поръчка е изпратена.", "Your quick order has been sent.") : text("Съобщението е изпратено.", "Your message has been sent.")}</h3><p>{text("Ще се свържем с Вас възможно най-скоро.", "We will contact you as soon as possible.")}</p></div> : <form className={contactKind === "order" ? "order-form" : contactKind === "quick-order" ? "quick-order-form" : undefined} onSubmit={submitContact}>
+            {contactKind === "order" && <h3 className="checkout-step">{text("1. Контакт", "1. Contact")}</h3>}
             {contactKind === "order" || contactKind === "quick-order"
               ? <label>{text("Име *", "First name *")}<input name="firstName" required autoComplete="given-name" /></label>
               : <label>{text("Име", "Name")}<input name="name" required autoComplete="name" /></label>}
@@ -1160,7 +1195,7 @@ export default function Home() {
             <label>{contactKind === "order" || contactKind === "quick-order" ? text("Телефон *", "Phone *") : text("Телефон", "Phone")}<input name="phone" type="tel" required={contactKind === "order" || contactKind === "quick-order"} autoComplete="tel" /></label>
             {contactKind === "quick-order" && <p className="quick-order-message">{text("Ние ще се свържем с Вас.", "We will contact you.")}</p>}
             {contactKind === "order" && <fieldset className="order-address delivery-choice">
-              <legend>{text("Доставка", "Delivery")}</legend>
+              <legend>{text("2. Доставка", "2. Delivery")}</legend>
               <div className="delivery-methods">
                 <button type="button" className={deliveryMethod === "address" ? "active" : ""} onClick={() => setDeliveryMethod("address")}>{text("До адрес", "To address")}</button>
                 <button type="button" className={deliveryMethod === "courier" ? "active" : ""} onClick={() => setDeliveryMethod("courier")}>{text("До офис", "To office")}</button>
@@ -1178,6 +1213,8 @@ export default function Home() {
                   <label>{text("Апартамент", "Apartment")}<input name="apartment" /></label>
                 </div> : <div className="courier-picker">
                   <p>{text("Избери куриер", "Choose a courier")}</p>
+                  {courierLoadStatus === "loading" && <p role="status">{text("Зареждаме офисите…", "Loading offices…")}</p>}
+                  {courierLoadStatus === "error" && <p role="alert">{text("Офисите не се заредиха.", "Offices could not be loaded.")} <button type="button" onClick={() => setCourierLoadAttempt((attempt) => attempt + 1)}>{text("Опитай отново", "Try again")}</button></p>}
                   <div className="courier-buttons">
                     {(["econt", "speedy", "boxnow"] as Courier[]).map((item) => <button type="button" key={item} className={courier === item ? "active" : ""} onClick={() => { setCourier(item); setCourierCity(""); setCourierLocation(""); }}>
                       {courierNames[item]}
@@ -1188,6 +1225,16 @@ export default function Home() {
                 </div>}
             </fieldset>}
             {contactKind !== "quick-order" && <label>{contactKind === "order" ? text("Допълнителна информация", "Additional information") : text("Съобщение", "Message")}<textarea name="message" required={contactKind === "enquiry"} rows={5} /></label>}
+            {contactKind === "order" && <section className="checkout-review" aria-labelledby="checkout-review-title">
+              <h3 id="checkout-review-title" className="checkout-step">{text("3. Преглед на заявката", "3. Review your request")}</h3>
+              <ul>{cart.map((item, index) => <li key={`${item.id}-${index}`}><span>{productText(item, "name")} · {translate(item.color)} × {item.quantity}</span><strong>{item.price === null ? text("По запитване", "On request") : `€${((item.price * item.quantity) - (item.discount ?? 0)).toFixed(2)}`}</strong></li>)}</ul>
+              <div><span>{text("Междинна сума", "Subtotal")}</span><strong>{cart.some((item) => item.price === null) ? text("По запитване", "On request") : `€${total.toFixed(2)}`}</strong></div>
+              {discountTotal > 0 && <div><span>{text("Включена отстъпка", "Included discount")}</span><strong>−€{discountTotal.toFixed(2)}</strong></div>}
+              <div className="review-total"><span>{text("Сума за продуктите", "Product total")}</span><strong>{cart.some((item) => item.price === null) ? text("По запитване", "On request") : `€${finalTotal.toFixed(2)}`}</strong></div>
+              <p>{deliveryMethod === "courier" ? `${courier ? courierNames[courier] : text("Избери куриер", "Choose a courier")} · ${courierCity} · ${courierOfficeOptions.find((option) => option.value === courierLocation)?.label ?? text("Избери офис или автомат", "Choose an office or locker")}` : text("Доставка до посочения адрес", "Delivery to the address entered above")}</p>
+              <p>{text("Доставката не е включена. Крайната сума с доставката се потвърждава отделно преди приемане на поръчката.", "Delivery is not included. The final total including delivery is confirmed separately before accepting the order.")}</p>
+              <button className="review-edit" type="button" onClick={() => { setContactFormOpen(false); setCartOpen(true); }}>{text("Промени продуктите или количеството", "Edit products or quantities")}</button>
+            </section>}
             <div className="form-legal">
               <p>{text("Използваме данните, за да отговорим и да обработим заявката ти. Това не е съгласие за реклама.", "We use your details to respond and handle your request. This does not subscribe you to marketing.")} <a href={`/policies/privacy?lang=${language}`} target="_blank" rel="noopener noreferrer">{text("Как защитаваме личните данни", "How we handle personal data")}</a></p>
               {contactKind === "order" && <label className="terms-checkbox"><input type="checkbox" name="termsAccepted" required /><span>{text("Приемам", "I accept the")} <a href={`/policies/terms?lang=${language}`} target="_blank" rel="noopener noreferrer">{text("Общите условия", "Terms & conditions")}</a> {text("и се запознах с", "and have read the")} <a href={`/policies/returns?lang=${language}`} target="_blank" rel="noopener noreferrer">{text("условията за връщане и рекламация", "Returns & complaints policy")}</a>. *</span></label>}
