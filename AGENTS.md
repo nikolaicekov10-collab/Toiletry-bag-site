@@ -5,6 +5,7 @@ It records completed changes, verified checks, user decisions, and remaining wor
 Treat it as project context; newer explicit user instructions take precedence.
 
 - Communicate with the owner in Bulgarian.
+- Before implementing a new group of changes, give the owner the complete concrete list of recommended changes for that group. This is a communication preference, not an extra approval gate; proceed when the work is already authorized.
 - Use the existing checkout. Cloud sessions are already isolated; do not create a Git worktree unless requested.
 - Check Git status and the current remote branch before changing or uploading work. Preserve existing user changes.
 - Distinguish local changes, commits pushed to GitHub, and deployment to the live Sites website. A GitHub push does not prove a live deployment.

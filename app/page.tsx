@@ -2,7 +2,9 @@
 
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Heart, Mail, Menu, MessageSquare, Phone, ShoppingBag, X } from "lucide-react";
-import { imagePath } from "./image-path";
+import { useCourierLocations } from "./use-courier-locations";
+import type { Courier } from "./courier-types";
+import { imageProps } from "./image-path";
 import { CART_KEY, restoreCart, serializeCart } from "./cart-storage";
 import { filterProducts } from "./product-filter";
 import { applySecondProductDiscount, isPromotionEligible } from "./cart-pricing";
@@ -36,18 +38,6 @@ type Product = {
   materials?: string;
 };
 type CartItem = Product & { quantity: number; image?: string; discount?: number };
-type Courier = "econt" | "speedy" | "boxnow";
-type CourierLocation = {
-  id: string;
-  carrier: Courier;
-  kind: "office" | "locker" | "mobile";
-  city: string;
-  postCode: string;
-  name: string;
-  address: string;
-  code: string;
-};
-
 const courierNames: Record<Courier, string> = { econt: "Еконт", speedy: "Спиди", boxnow: "BOX NOW" };
 
 const toiletryColors = [
@@ -544,9 +534,10 @@ export default function Home() {
   const [cartItems, setCart] = useState<CartItem[]>([]);
   const [cartRestored, setCartRestored] = useState(false);
   const [cartStorageError, setCartStorageError] = useState(false);
-  const [courierLocations, setCourierLocations] = useState<CourierLocation[]>([]);
-  const [courierLoadStatus, setCourierLoadStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [courierLoadAttempt, setCourierLoadAttempt] = useState(0);
+  const { cities: availableCities, locations: courierLocations, status: courierLoadStatus } = useCourierLocations(
+    contactFormOpen && contactKind === "order" && deliveryMethod === "courier", courier, courierCity, courierLoadAttempt,
+  );
   const cart = useMemo(() => applySecondProductDiscount(cartItems), [cartItems]);
   const [color, setColor] = useState("Кафяв");
   const [activeImage, setActiveImage] = useState<string | null>(null);
@@ -581,12 +572,7 @@ export default function Home() {
     return language === "bg" ? "Изглед на продукта" : "Product view";
   };
 
-  const courierCities = useMemo(() => {
-    if (!courier) return [];
-    return [...new Set(courierLocations.filter((location) => location.carrier === courier).map((location) => location.city))]
-      .sort((a, b) => a.localeCompare(b, "bg"))
-      .map((city) => ({ value: city, label: city, search: city }));
-  }, [courier, courierLocations]);
+  const courierCities = useMemo(() => availableCities.map((city) => ({ value: city, label: city, search: city })), [availableCities]);
   const courierOfficeOptions = useMemo(() => {
     if (!courier || !courierCity) return [];
     return courierLocations
@@ -609,16 +595,6 @@ export default function Home() {
     try { localStorage.setItem(CART_KEY, serializeCart(cartItems)); setCartStorageError(false); }
     catch { setCartStorageError(true); }
   }, [cartItems, cartRestored]);
-
-  useEffect(() => {
-    if (!contactFormOpen || contactKind !== "order" || courierLocations.length) return;
-    let cancelled = false;
-    setCourierLoadStatus("loading");
-    import("./data/courier-locations.json").then((data) => {
-      if (!cancelled) { setCourierLocations(data.default as CourierLocation[]); setCourierLoadStatus("ready"); }
-    }).catch(() => { if (!cancelled) setCourierLoadStatus("error"); });
-    return () => { cancelled = true; };
-  }, [contactFormOpen, contactKind, courierLocations.length, courierLoadAttempt]);
 
   useLayoutEffect(() => {
     if ("scrollRestoration" in window.history) {
@@ -812,7 +788,7 @@ export default function Home() {
           className="hero-image"
           role="img"
           aria-label={text("Две приятелки с черна мини чанта за рамо, сива чанта за китка и червено скрънчи Nikky’S", "Two friends with a black mini shoulder bag, a grey wrist bag and a red Nikky’S scrunchie")}
-        />
+        ><img className="hero-photo" {...imageProps("/images/nikkys-hero-friends.png", "100vw")} alt="" fetchPriority="high" decoding="async" /></div>
       </section>
 
       <section className="section products-section" id="new">
@@ -863,7 +839,7 @@ export default function Home() {
                 }}
               >
                 {product.images ? (
-                  <img loading="lazy" decoding="async" src={imagePath((product.imagesByAudience?.[activeGroup === "Мъжки аксесоари" ? "men" : "women"] ?? product.images)[0])} alt={`${productText(product, "name")} ${text("от капитонирана кожа", "in quilted eco leather")}`} />
+                  <img loading="lazy" decoding="async" {...imageProps((product.imagesByAudience?.[activeGroup === "Мъжки аксесоари" ? "men" : "women"] ?? product.images)[0], "(max-width: 900px) 45vw, 23vw")} alt={`${productText(product, "name")} ${text("от капитонирана кожа", "in quilted eco leather")}`} />
                 ) : (
                   <span
                     className="product-object"
@@ -894,6 +870,7 @@ export default function Home() {
       </section>
 
       <section className="feeling">
+        <img className="feeling-photo" {...imageProps("/images/nikkys-casual-ivory.png", "100vw")} alt="" loading="lazy" decoding="async" />
         <div>
           <p className="eyebrow">{text("Създадено за всеки ден", "Made for every day")}</p>
           <h2>
@@ -909,7 +886,7 @@ export default function Home() {
 
       <section className="craft" id="story">
         <img
-          src={imagePath("/images/nikkys-process-v2.jpg")}
+          {...imageProps("/images/nikkys-process-v2.jpg", "(max-width: 900px) 100vw, 50vw")}
           loading="lazy" decoding="async"
           alt={text("Ръчна изработка в ателието на Nikky’S", "Handcrafting in the Nikky’S studio")}
         />
@@ -1012,7 +989,7 @@ export default function Home() {
             <button className="close" onClick={() => setSelected(null)} aria-label={text("Затвори", "Close")}>
               <X />
             </button>
-            <div className="modal-visual">{selectedImages.length ? <><div className="gallery-stage"><img className="gallery-main" src={imagePath(currentImage)} alt={productText(selected, "name")}/>{selectedImages.length > 1 && <><button type="button" className="gallery-arrow gallery-arrow-prev" onClick={()=>showGalleryImage(-1)} aria-label={text("Предишна снимка", "Previous image")}><ArrowLeft size={20}/></button><button type="button" className="gallery-arrow gallery-arrow-next" onClick={()=>showGalleryImage(1)} aria-label={text("Следваща снимка", "Next image")}><ArrowRight size={20}/></button><span className="gallery-count" aria-live="polite">{currentImageIndex + 1} / {selectedImages.length}</span></>}</div><div className="gallery-thumbs">{selectedImages.map((image,index)=><button type="button" className={currentImage===image?"active":""} onClick={()=>setActiveImage(image)} aria-label={`${text("Снимка", "Photo")} ${index+1}: ${photoLabel(image)}`} aria-pressed={currentImage===image} key={image}><img loading="lazy" decoding="async" src={imagePath(image)} alt={`${productText(selected, "name")} — ${text("снимка", "image")} ${index+1}`}/></button>)}</div><div className="product-photo-tools">
+            <div className="modal-visual">{selectedImages.length ? <><div className="gallery-stage"><img className="gallery-main" {...imageProps(currentImage, "(max-width: 900px) 100vw, 470px")} alt={productText(selected, "name")}/>{selectedImages.length > 1 && <><button type="button" className="gallery-arrow gallery-arrow-prev" onClick={()=>showGalleryImage(-1)} aria-label={text("Предишна снимка", "Previous image")}><ArrowLeft size={20}/></button><button type="button" className="gallery-arrow gallery-arrow-next" onClick={()=>showGalleryImage(1)} aria-label={text("Следваща снимка", "Next image")}><ArrowRight size={20}/></button><span className="gallery-count" aria-live="polite">{currentImageIndex + 1} / {selectedImages.length}</span></>}</div><div className="gallery-thumbs">{selectedImages.map((image,index)=><button type="button" className={currentImage===image?"active":""} onClick={()=>setActiveImage(image)} aria-label={`${text("Снимка", "Photo")} ${index+1}: ${photoLabel(image)}`} aria-pressed={currentImage===image} key={image}><img loading="lazy" decoding="async" {...imageProps(image, "72px")} alt={`${productText(selected, "name")} — ${text("снимка", "image")} ${index+1}`}/></button>)}</div><div className="product-photo-tools">
               <span aria-live="polite">{photoLabel(currentImage)}</span>
               {lifestyleImage && <button type="button" aria-pressed={currentImage === lifestyleImage} onClick={() => setActiveImage(lifestyleImage)}>{text("Виж визия с модела", "See it styled")}</button>}
               <a href={currentImage} target="_blank" rel="noopener noreferrer">{text("Отвори снимката в пълен размер ↗", "Open full-size photo ↗")}</a>
@@ -1069,7 +1046,7 @@ export default function Home() {
       {orderProduct && <div className="overlay" onMouseDown={() => setOrderProduct(null)}>
         <section className="order-choice" role="dialog" aria-modal="true" aria-labelledby="order-choice-title" onMouseDown={(event) => event.stopPropagation()}>
           <button className="close" type="button" aria-label={text("Затвори", "Close")} onClick={() => setOrderProduct(null)}><X /></button>
-          {orderImage && <img className="order-choice-image" src={imagePath(orderImage)} alt={`${productText(orderProduct, "name")} — ${translate(orderColor)}`} />}
+          {orderImage && <img className="order-choice-image" {...imageProps(orderImage, "(max-width: 640px) 100vw, 340px")} alt={`${productText(orderProduct, "name")} — ${translate(orderColor)}`} />}
           <div className="order-choice-copy">
             <p className="eyebrow">{text("Твоят избор", "Your selection")}</p>
             <h2 id="order-choice-title">{productText(orderProduct, "name")}</h2>
@@ -1144,7 +1121,7 @@ export default function Home() {
                 <div className="cart-items">
                   {cart.map((item, i) => (
                     <div className="cart-item" key={`${item.id}-${i}`}>
-                      {item.image ? <img className="cart-thumb" src={imagePath(item.image)} alt="" /> : <span className="cart-thumb" style={{ background: item.tone }} />}
+                      {item.image ? <img className="cart-thumb" {...imageProps(item.image, "74px")} alt="" /> : <span className="cart-thumb" style={{ background: item.tone }} />}
                       <div>
                         <h3>{productText(item, "name")}</h3>
                         <p>{translate(item.color)}</p>
@@ -1239,8 +1216,8 @@ export default function Home() {
                       {courierNames[item]}
                     </button>)}
                   </div>
-                  <SearchDropdown label={text("Град", "City")} placeholder={text("Избери град", "Choose a city")} searchPlaceholder={text("Търси град…", "Search city…")} value={courierCity} options={courierCities} disabled={!courier} onChange={(value) => { if (value !== courierCity) { setCourierCity(value); setCourierLocation(""); } }} />
-                  <SearchDropdown label={text("Офис или автомат", "Office or locker")} placeholder={text("Избери офис или автомат", "Choose an office or locker")} searchPlaceholder={text("Търси по име, адрес или код…", "Search by name, address or code…")} value={courierLocation} options={courierOfficeOptions} disabled={!courierCity} onChange={setCourierLocation} />
+                  <SearchDropdown label={text("Град", "City")} placeholder={text("Избери град", "Choose a city")} searchPlaceholder={text("Търси град…", "Search city…")} value={courierCity} options={courierCities} disabled={!courier || courierLoadStatus === "loading"} onChange={(value) => { if (value !== courierCity) { setCourierCity(value); setCourierLocation(""); } }} />
+                  <SearchDropdown label={text("Офис или автомат", "Office or locker")} placeholder={text("Избери офис или автомат", "Choose an office or locker")} searchPlaceholder={text("Търси по име, адрес или код…", "Search by name, address or code…")} value={courierLocation} options={courierOfficeOptions} disabled={!courierCity || courierLoadStatus === "loading"} onChange={setCourierLocation} />
                 </div>}
             </fieldset>}
             {contactKind !== "quick-order" && <label>{contactKind === "order" ? text("Допълнителна информация", "Additional information") : text("Съобщение", "Message")}<textarea name="message" required={contactKind === "enquiry"} rows={5} /></label>}

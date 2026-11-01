@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, X } from "lucide-react";
+import { imageProps } from "./image-path";
 import galleries from "./data/custom-gallery.json";
 
 export function CustomGallery({ language, onEnquiry }: { language: "bg" | "en"; onEnquiry: () => void }) {
@@ -35,7 +36,7 @@ export function CustomGallery({ language, onEnquiry }: { language: "bg" | "en"; 
     <div className="custom-gallery-grid">
       {galleries.map((item, index) => <article key={item.id}>
         <button type="button" className="custom-gallery-card" aria-label={text("Разгледай: ", "View: ") + name(item)} onClick={(event) => { trigger.current = event.currentTarget; setPhoto(0); setSelected(index); }}>
-          <div className="custom-gallery-cover"><img src={item.images[0]} alt={name(item)} loading="lazy" width="1086" height="1448" /><span>{text("Разгледай", "View gallery")} <ArrowRight size={17} /></span></div>
+          <div className="custom-gallery-cover"><img {...imageProps(item.images[0], "(max-width: 700px) 45vw, 30vw")} alt={name(item)} loading="lazy" /><span>{text("Разгледай", "View gallery")} <ArrowRight size={17} /></span></div>
           <h3>{name(item)}</h3>
         </button>
       </article>)}
@@ -51,11 +52,11 @@ export function CustomGallery({ language, onEnquiry }: { language: "bg" | "en"; 
       <div className="custom-gallery-viewer">
         <header><h2 id="custom-gallery-title">{name(entry)}</h2><button type="button" className="gallery-icon" autoFocus aria-label={text("Затвори галерията", "Close gallery")} onClick={close}><X /></button></header>
         <div className="custom-gallery-stage">
-          <img src={entry.images[photo]} alt={`${name(entry)} — ${text("снимка", "photo")} ${photo + 1}`} />
+          <img {...imageProps(entry.images[photo], "(max-width: 900px) 100vw, 900px")} alt={`${name(entry)} — ${text("снимка", "photo")} ${photo + 1}`} />
           {entry.images.length > 1 && <><button type="button" className="gallery-icon gallery-prev" aria-label={text("Предишна снимка", "Previous photo")} onClick={() => setPhoto((photo + entry.images.length - 1) % entry.images.length)}><ArrowLeft /></button><button type="button" className="gallery-icon gallery-next" aria-label={text("Следваща снимка", "Next photo")} onClick={() => setPhoto((photo + 1) % entry.images.length)}><ArrowRight /></button></>}
         </div>
         <p className="custom-gallery-count" aria-live="polite">{photo + 1} / {entry.images.length}</p>
-        {entry.images.length > 1 && <div className="custom-gallery-thumbnails">{entry.images.map((src, index) => <button key={src} type="button" aria-label={`${text("Снимка", "Photo")} ${index + 1}`} aria-pressed={photo === index} onClick={() => setPhoto(index)}><img src={src} alt="" loading="lazy" /></button>)}</div>}
+        {entry.images.length > 1 && <div className="custom-gallery-thumbnails">{entry.images.map((src, index) => <button key={src} type="button" aria-label={`${text("Снимка", "Photo")} ${index + 1}`} aria-pressed={photo === index} onClick={() => setPhoto(index)}><img {...imageProps(src, "72px")} alt="" loading="lazy" /></button>)}</div>}
       </div>
     </dialog>}
   </section>;
