@@ -572,6 +572,15 @@ export default function Home() {
     [];
   const currentImage = activeImage ?? selectedImages[0];
   const currentImageIndex = Math.max(0, selectedImages.indexOf(currentImage));
+  const lifestyleImage = selectedImages.find((image) => /lifestyle|worn/.test(image));
+  const photoLabel = (image: string | undefined) => {
+    if (/lifestyle|worn/.test(image ?? "")) return language === "bg" ? "Визия с модела" : "Styled with the design";
+    if (/inside|interior/.test(image ?? "")) return language === "bg" ? "Вътрешна част" : "Interior";
+    if (/side/.test(image ?? "")) return language === "bg" ? "Страничен изглед" : "Side view";
+    if (/back/.test(image ?? "")) return language === "bg" ? "Изглед отзад" : "Back view";
+    return language === "bg" ? "Изглед на продукта" : "Product view";
+  };
+
   const courierCities = useMemo(() => {
     if (!courier) return [];
     return [...new Set(courierLocations.filter((location) => location.carrier === courier).map((location) => location.city))]
@@ -997,23 +1006,29 @@ export default function Home() {
         <div className="overlay" onMouseDown={() => setSelected(null)}>
           <section
             className="product-modal"
+            role="dialog" aria-modal="true" aria-labelledby="product-dialog-title"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <button className="close" onClick={() => setSelected(null)} aria-label={text("Затвори", "Close")}>
               <X />
             </button>
-            <div className="modal-visual">{selectedImages.length ? <><div className="gallery-stage"><img className="gallery-main" src={imagePath(currentImage)} alt={productText(selected, "name")}/>{selectedImages.length > 1 && <><button type="button" className="gallery-arrow gallery-arrow-prev" onClick={()=>showGalleryImage(-1)} aria-label={text("Предишна снимка", "Previous image")}><ArrowLeft size={20}/></button><button type="button" className="gallery-arrow gallery-arrow-next" onClick={()=>showGalleryImage(1)} aria-label={text("Следваща снимка", "Next image")}><ArrowRight size={20}/></button><span className="gallery-count" aria-live="polite">{currentImageIndex + 1} / {selectedImages.length}</span></>}</div><div className="gallery-thumbs">{selectedImages.map((image,index)=><button type="button" className={currentImage===image?"active":""} onClick={()=>setActiveImage(image)} key={image}><img loading="lazy" decoding="async" src={imagePath(image)} alt={`${productText(selected, "name")} — ${text("снимка", "image")} ${index+1}`}/></button>)}</div></> : <span className="product-object large" style={{ "--tone": selected.tone } as React.CSSProperties}><i /></span>}</div>
+            <div className="modal-visual">{selectedImages.length ? <><div className="gallery-stage"><img className="gallery-main" src={imagePath(currentImage)} alt={productText(selected, "name")}/>{selectedImages.length > 1 && <><button type="button" className="gallery-arrow gallery-arrow-prev" onClick={()=>showGalleryImage(-1)} aria-label={text("Предишна снимка", "Previous image")}><ArrowLeft size={20}/></button><button type="button" className="gallery-arrow gallery-arrow-next" onClick={()=>showGalleryImage(1)} aria-label={text("Следваща снимка", "Next image")}><ArrowRight size={20}/></button><span className="gallery-count" aria-live="polite">{currentImageIndex + 1} / {selectedImages.length}</span></>}</div><div className="gallery-thumbs">{selectedImages.map((image,index)=><button type="button" className={currentImage===image?"active":""} onClick={()=>setActiveImage(image)} aria-label={`${text("Снимка", "Photo")} ${index+1}: ${photoLabel(image)}`} aria-pressed={currentImage===image} key={image}><img loading="lazy" decoding="async" src={imagePath(image)} alt={`${productText(selected, "name")} — ${text("снимка", "image")} ${index+1}`}/></button>)}</div><div className="product-photo-tools">
+              <span aria-live="polite">{photoLabel(currentImage)}</span>
+              {lifestyleImage && <button type="button" aria-pressed={currentImage === lifestyleImage} onClick={() => setActiveImage(lifestyleImage)}>{text("Виж визия с модела", "See it styled")}</button>}
+              <a href={currentImage} target="_blank" rel="noopener noreferrer">{text("Отвори снимката в пълен размер ↗", "Open full-size photo ↗")}</a>
+            </div></> : <span className="product-object large" style={{ "--tone": selected.tone } as React.CSSProperties}><i /></span>}</div>
             <div className="modal-copy">
               <p className="eyebrow">{productText(selected, "category")}</p>
-              <h2>{productText(selected, "name")}</h2>
+              <h2 id="product-dialog-title">{productText(selected, "name")}</h2>
               {selected.price !== null && <strong>€{selected.price.toFixed(2)}</strong>}
-              <div className="details">
-                <span>{text("Размери", "Dimensions")}</span>
-                <b>{productText(selected, "dimensions") ?? text("Очаквайте", "Coming soon")}</b>
-                <span>{text("Материали", "Materials")}</span>
-                <b>{productText(selected, "materials") ?? text("Ще бъдат добавени", "To be added")}</b>
-              </div>
-              <p>{productDescription(selected) ?? text("Практичен ръчно изработен модел от мека капитонирана кожа, с чист силует, фина подплата и метален цип.", "A practical handmade design in soft quilted eco leather, with a clean silhouette, refined lining and metal zipper.")}</p>
+              <dl className="product-facts">
+                <div><dt>{text("Размери", "Dimensions")}</dt><dd>{productText(selected, "dimensions") ?? <button type="button" className="product-question" onClick={() => { setSelected(null); openContactForm("enquiry", `${productText(selected, "name")} — ${text("Запитване за размерите", "Dimensions enquiry")}`); }}>{text("Попитай за размерите", "Ask about dimensions")}</button>}</dd></div>
+                <div><dt>{text("Материали", "Materials")}</dt><dd>{productText(selected, "materials") ? <ul>{productText(selected, "materials")!.split(" · ").map((material) => <li key={material}>{material}</li>)}</ul> : text("Уточняваме при запитване", "Confirmed on enquiry")}</dd></div>
+              </dl>
+              <details className="product-description">
+                <summary>{text("Описание на продукта", "Product description")}</summary>
+                <p>{productDescription(selected) ?? text("Попитай ни за повече информация за този модел.", "Ask us for more information about this design.")}</p>
+              </details>
               {selected.colors?.length !== 0 && <fieldset>
                 <legend>
                   {text("Цвят", "Colour")}: <b>{translate(color)}</b>
@@ -1030,6 +1045,7 @@ export default function Home() {
                     <button
                       key={name}
                       aria-label={translate(name)}
+                      aria-pressed={color === name}
                       className={color === name ? "active" : ""}
                       style={{ background: tone }}
                       onClick={() => {
@@ -1042,6 +1058,9 @@ export default function Home() {
                 </div>
               </fieldset>}
 
+            </div>
+            <div className="product-actions">
+              <span>{selected.price === null ? text("Цена по запитване", "Price on enquiry") : `€${selected.price.toFixed(2)}`}<small>{translate(color)}</small></span>
               <button className="primary-button full" type="button" onClick={() => { setOrderProduct(selected); setOrderColor(color); setOrderAudience(selectedAudience); setOrderImage(currentImage); setOrderQuantity(1); setOrderAdded(false); setSelected(null); }}>{text("Поръчай", "Order")} <ArrowRight size={17}/></button>
             </div>
           </section>
