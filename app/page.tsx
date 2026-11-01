@@ -1150,7 +1150,7 @@ export default function Home() {
           {contactProduct && <p className="contact-product">{contactProduct}</p>}
           {(contactKind === "order" || contactKind === "quick-order") && <div className="checkout-summary">
             <p><strong>{text("Начин на плащане", "Payment method")}:</strong> {text("Наложен платеж", "Cash on delivery")}</p>
-            <p>{text("Срок за изработка: 3 дни след потвърждаване на поръчката. Доставка: още 2 дни.", "Production time: 3 days after order confirmation. Delivery: a further 2 days.")}</p>
+            <p>{text("Срок за изработка: 3 дни след потвърждаване на поръчката. Доставка: 1–2 дни според услугата на куриера.", "Production time: 3 days after order confirmation. Delivery: 1–2 days depending on the courier service.")}</p>
           </div>}
           {contactStatus === "sent" ? <div className="form-success"><Check /><h3>{contactKind === "quick-order" ? text("Бързата поръчка е изпратена.", "Your quick order has been sent.") : text("Съобщението е изпратено.", "Your message has been sent.")}</h3><p>{text("Ще се свържем с Вас възможно най-скоро.", "We will contact you as soon as possible.")}</p></div> : <form className={contactKind === "order" ? "order-form" : contactKind === "quick-order" ? "quick-order-form" : undefined} onSubmit={submitContact}>
             {contactKind === "order" || contactKind === "quick-order"
