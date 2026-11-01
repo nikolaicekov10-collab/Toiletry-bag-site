@@ -26,9 +26,11 @@ export function restoreCart<T extends CatalogItem>(raw: string | null, catalog: 
       const colors = product.colors?.length ? product.colors.map((option) => option.name) : [product.color];
       if (!colors.includes(entry.color)) return [];
       const variants = [...(product.variants ?? []), ...Object.values(product.variantsByAudience ?? {}).flat()];
-      const images = [
+      const colourImages = variants.filter((variant) => variant.name === entry.color).flatMap((variant) => variant.images);
+      // A catalog's default gallery can show a different colour. Only use it
+      // when no colour-specific gallery exists for this saved choice.
+      const images = colourImages.length ? colourImages : [
         ...(product.images ?? []), ...Object.values(product.imagesByAudience ?? {}).flat(),
-        ...variants.filter((variant) => variant.name === entry.color).flatMap((variant) => variant.images),
       ];
       const image = typeof entry.image === "string" && images.includes(entry.image) ? entry.image : images[0];
       return [{ ...product, color: entry.color, quantity: entry.quantity, image }];

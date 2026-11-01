@@ -34,3 +34,25 @@ test("emptying a bag remains empty after reload and item order is retained", () 
   const choices = [1, 2, 3].map((quantity) => ({ id: 1, color: "Brown", quantity }));
   assert.deepEqual(restoreCart(serializeCart(choices), catalog).map((item) => item.quantity), [1, 2, 3]);
 });
+
+test("a changed photo falls back to the saved colour, never the catalog's default colour", () => {
+  const products = [{ ...catalog[0], colors: [{ name: "Brown" }, { name: "Black" }], variants: [
+    { name: "Brown", images: ["/front.png"] },
+    { name: "Black", images: ["/black-front.png", "/black-side.png"] },
+  ] }];
+  for (const image of [undefined, "/removed-black-photo.png", "/front.png"]) {
+    const [item] = restoreCart(serializeCart([{ id: 1, color: "Black", quantity: 2, image }]), products);
+    assert.equal(item.color, "Black");
+    assert.equal(item.image, "/black-front.png");
+    assert.equal(item.quantity, 2);
+  }
+});
+
+test("reload preserves audience-specific photos of the selected colour", () => {
+  const products = [{ ...catalog[0], variantsByAudience: {
+    women: [{ name: "Brown", images: ["/women-front.png"] }],
+    men: [{ name: "Brown", images: ["/men-front.png"] }],
+  } }];
+  const [item] = restoreCart(serializeCart([{ id: 1, color: "Brown", quantity: 1, image: "/men-front.png" }]), products);
+  assert.equal(item.image, "/men-front.png");
+});
